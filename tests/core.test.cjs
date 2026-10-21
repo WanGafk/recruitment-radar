@@ -140,3 +140,118 @@ test('checking the same public listing twice does not invent new jobs', async ()
   await e.run('startScan("all")'); assert.equal(e.state.scan.newCount, 1);
   await e.run('startScan("all")'); assert.equal(e.state.scan.newCount, 0); assert.equal(e.state.jobs.length, 1);
 });
+
+function stubListing(e, items = [job()]) {
+  e.S.fetchSource = async () => ({ items: structuredClone(items), queries: ['https://example.com/jobs'], errors: [], method: '合成列表', coverage: '第一页' });
+  e.S.enrich = async () => [];
+}
+function configuredSource() { return [{ id: 'sample', name: '示例公开来源', enabled: true, url: 'https://example.com/jobs', adapter: 'html' }]; }
+function respond(e, status = 200) {
+  let requests = 0;
+  e.ctx.fetch = async () => { requests++; return new Response('<div class="job-content">岗位职责：软件测试。简历投递至 hiring@example.com</div>', { status }); };
+  return () => requests;
+}
+function cachedJob(extra = {}) {
+  const checkedAt = new Date(Date.now() - 60000).toISOString();
+  return job({ updatedAt: '2026-01-01T00:00:00Z', publishedAt: '2026-01-01T00:00:00Z', detailVerified: true, detailCheckedAt: checkedAt,
+    description: '已核实的测试职责', applyInfo: { ...info([{ kind: 'email', value: 'hiring@example.com' }]), checkedAt }, ...extra });
+}
+
+test('opening a configured extension starts a real scan and repeated openings share its cooldown', async () => {
+  const e = environment({ sources: configuredSource() });
+  let requests = 0;
+  stubListing(e); const actual = e.S.fetchSource;
+  e.S.fetchSource = async (...args) => { requests++; return actual(...args); };
+  const first = await e.route({ type: 'ensureFresh' }); assert.equal(first.started, true);
+  await e.run('scanTask');
+  const second = await e.route({ type: 'ensureFresh' }); assert.equal(second.started, false);
+  assert.equal(second.reason, 'recent'); assert.equal(requests, 1);
+  e.state.lastFullScanStartedAt = new Date(Date.now() - 6 * 60000).toISOString();
+  assert.equal((await e.route({ type: 'ensureFresh' })).started, true); await e.run('scanTask'); assert.equal(requests, 2);
+});
+test('a blank profile never triggers an automatic search', async () => {
+  const e = environment({ sources: configuredSource(), profile: {} });
+  let requests = 0; e.S.fetchSource = async () => { requests++; throw Error('Unexpected'); };
+  assert.equal((await e.route({ type: 'ensureFresh' })).reason, 'needs-profile'); assert.equal(requests, 0);
+});
+test('a failed scan is retried after a minute and not presented as a successful update', async () => {
+  const e = environment({ sources: configuredSource(), lastSuccessAt: '2000-01-01' });
+  e.S.fetchSource = async () => { throw Error('Failed to fetch'); };
+  await e.route({ type: 'ensureFresh' }); await e.run('scanTask');
+  assert.equal(e.state.scan.outcome, 'failed'); assert.equal(e.state.lastSuccessAt, '2000-01-01');
+  assert.equal((await e.route({ type: 'ensureFresh' })).started, false);
+  e.state.lastFullScanStartedAt = new Date(Date.now() - 61000).toISOString();
+  assert.equal((await e.route({ type: 'ensureFresh' })).started, true); await e.run('scanTask');
+});
+test('listing results become visible while detail verification is still running', async () => {
+  const e = environment({ sources: configuredSource(), applications: { saved: { stage: 'interview', notes: '保留备注' } } });
+  stubListing(e); let finish;
+  e.S.enrich = () => new Promise(resolve => { finish = resolve; });
+  const task = e.run('startScan("all")');
+  for (let i = 0; i < 100 && !finish; i++) await new Promise(resolve => setTimeout(resolve, 1));
+  assert.equal(e.state.jobs.length, 1); assert.equal(e.state.scan.running, true); assert.equal(typeof finish, 'function');
+  finish([]); await task;
+  assert.equal(e.state.scan.newCount, 1); assert.equal(e.state.applications.saved.notes, '保留备注');
+});
+test('manual checks force detail verification even if a previous scan was recent', async () => {
+  const e = environment({ sources: configuredSource(), lastFullScanStartedAt: new Date().toISOString() });
+  stubListing(e); let forced;
+  e.S.enrich = async (items, profile, previous, progress, options) => { forced = options.force; return []; };
+  await e.route({ type: 'scanNow' }); await e.run('scanTask'); assert.equal(forced, true);
+});
+test('latest publication sorts ahead of an older high-salary match', () => {
+  const { R } = environment(), p = R.profile({ roles: ['软件测试'], degree: 'bachelor', minMonthly: 0 });
+  const old = job({ id: 'old', publishedAt: '2026-01-01', salaryLow: 50000, salaryUnit: 'month' });
+  const recent = job({ id: 'recent', publishedAt: '2026-01-02', salaryLow: 3000, salaryUnit: 'month' });
+  assert.equal(R.sortJobs([old, recent], p)[0].id, 'recent');
+  assert.equal(R.sortJobs([old, recent], p, 'match')[0].id, 'old');
+});
+test('local discovery time cannot masquerade as a publication or source update', () => {
+  const { R } = environment(), p = R.profile();
+  const unknown = job({ id: 'unknown', publishedAt: null, updatedAt: null, firstSeenAt: '2099-01-01', lastCheckedAt: '2099-01-01' });
+  const dated = job({ id: 'dated', publishedAt: '2026-01-02', updatedAt: '2026-01-02' });
+  assert.equal(R.sortJobs([unknown, dated], p)[0].id, 'dated'); assert.equal(R.sortJobs([unknown, dated], p, 'updated')[0].id, 'dated');
+});
+test('recent unchanged source data can reuse a five-minute detail cache', async () => {
+  const e = environment(), previous = cachedJob(), calls = respond(e), raw = job({ publishedAt: previous.publishedAt, updatedAt: previous.updatedAt });
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [previous], async () => {});
+  assert.equal(calls(), 0); assert.equal(raw.description, previous.description);
+});
+test('a changed source timestamp invalidates even a one-minute-old cache', async () => {
+  const e = environment(), previous = cachedJob(), calls = respond(e), raw = job({ publishedAt: previous.publishedAt, updatedAt: '2026-01-02T00:00:00Z' });
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [previous], async () => {});
+  assert.equal(calls(), 1); assert.equal(raw.linkCheck.status, 'available');
+});
+test('a six-minute-old detail cache is rechecked', async () => {
+  const e = environment(), previous = cachedJob({ detailCheckedAt: new Date(Date.now() - 6 * 60000).toISOString() }), calls = respond(e);
+  const raw = job({ publishedAt: previous.publishedAt, updatedAt: previous.updatedAt });
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [previous], async () => {}); assert.equal(calls(), 1);
+});
+test('manual detail checks bypass a fresh cache', async () => {
+  const e = environment(), previous = cachedJob(), calls = respond(e), raw = job({ publishedAt: previous.publishedAt, updatedAt: previous.updatedAt });
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [previous], async () => {}, { force: true }); assert.equal(calls(), 1);
+});
+test('duplicate feeds share one detail request within the same scan', async () => {
+  const e = environment(), calls = respond(e), options = { detailTasks: new Map() }, p = e.R.profile(e.state.profile);
+  const a = job(), b = job();
+  await Promise.all([e.S.enrich([a], p, [], async () => {}, options), e.S.enrich([b], p, [], async () => {}, options)]);
+  assert.equal(calls(), 1); assert.equal(a.linkCheck.status, 'available'); assert.equal(b.linkCheck.status, 'available');
+});
+test('HTTP 404 invalidates old public application evidence', async () => {
+  const e = environment(), previous = cachedJob(), raw = { ...previous }; respond(e, 404);
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [previous], async () => {}, { force: true });
+  const merged = e.R.mergeJobs([raw], [previous])[0];
+  assert.equal(e.R.applicationAccess(merged).status, 'unavailable'); assert.equal(e.R.matchesAccess(merged), false); assert.equal(merged.detailVerified, false);
+});
+test('network errors are marked unverified without claiming the employer closed the job', async () => {
+  const e = environment(), raw = job(); e.ctx.fetch = async () => { throw new TypeError('Failed to fetch'); };
+  await e.S.enrich([raw], e.R.profile(e.state.profile), [], async () => {}, { force: true });
+  assert.equal(raw.linkCheck.status, 'error'); assert.notEqual(raw.status, 'closed'); assert.equal(e.R.matchesAccess(raw), false);
+});
+test('manual link failure persists its evidence and preserves interview records', async () => {
+  const previous = cachedJob({ lastCheckedAt: '2000-01-01' });
+  const e = environment({ jobs: [previous], applications: { 'sample-job': { stage: 'interview', notes: '保留面试', job: previous } } });
+  respond(e, 404); await assert.rejects(e.route({ type: 'refreshDetail', jobId: 'sample-job' }), /HTTP 404/);
+  assert.equal(e.state.jobs[0].linkCheck.status, 'unavailable'); assert.equal(e.state.jobs[0].lastCheckedAt, '2000-01-01');
+  assert.equal(e.state.applications['sample-job'].stage, 'interview'); assert.equal(e.state.applications['sample-job'].notes, '保留面试');
+});

@@ -7,10 +7,10 @@
 <body>
   <main class="app">
     <header class="hero">
-      <div><p class="eyebrow">公开招聘来源 · 按你的资料找岗位</p><h1>招聘雷达 <span class="version" data-version>2.4.0</span></h1><p id="profileSummary" class="muted"></p></div>
+      <div><p class="eyebrow">公开招聘来源 · 按你的资料找岗位</p><h1>招聘雷达 <span class="version" data-version>2.5.0</span></h1><p id="profileSummary" class="muted"></p></div>
       <div class="actions"><button id="editProfile">建立求职档案</button><button id="openDashboard">独立工作台</button><button id="readPage">读取当前网页</button><button id="scanNow" class="primary">检查最新招聘</button></div>
     </header>
-    <section class="scan-banner" aria-live="polite"><strong id="scanTitle">等待连接</strong><p id="scanMessage"></p><p id="lastSuccess" class="muted"></p><progress id="scanProgress" hidden></progress></section>
+    <section class="scan-banner" aria-live="polite"><strong id="scanTitle">等待连接</strong><p id="scanMessage"></p><p id="lastSuccess" class="muted"></p><p id="freshnessStatus" class="muted"></p><progress id="scanProgress" hidden></progress></section>
     <p id="notice" class="notice" role="status" aria-live="polite"></p>
     <nav class="tabs" aria-label="工作区"><button data-view="jobs" class="active">招聘看板</button><button data-view="applications">求职进度</button><button data-view="profile">我的求职资料</button><button data-view="sources">来源与扫描记录</button></nav>
 
@@ -20,6 +20,7 @@
       <div class="filters"><label><input id="onlyRegion" type="checkbox">只看意向地区／全国岗位</label><label><input id="showExcluded" type="checkbox">显示明确不符合条件的记录</label><select id="originFilter" aria-label="原始招聘来源"><option value="">全部原始来源</option></select><select id="accessFilter" aria-label="投递渠道"><option value="off-campus">校外渠道线索（默认）</option><option value="public">原文有报名链接／简历邮箱</option><option value="school">校站受限／待核实</option><option value="unknown">其他待核实／失效入口</option><option value="all">全部（含校站待核实）</option></select><span id="resultCount" class="muted"></span></div>
       <p class="hint">默认展示已发现校外渠道线索的记录，包括仍需平台账号确认的岗位。校站受限、仅有高校来源且投递方式未核实、其他未知入口默认隐藏，可切换“全部”查看。公开正文不代表有投递资格。</p>
       <details class="platform-hub"><summary>更多平台找岗位 · 14 个官方入口</summary><p class="hint">自动列表来自国家就业平台及其公开聚合、高校公告，并非全网全量。以下为平台官网入口，不计入自动接入数量；可自行选择地区、实习与校招，部分需要登录。</p><div class="toolbar"><input id="platformKeyword" type="search" maxlength="100" aria-label="跨平台岗位关键词"><button id="copyKeyword">复制岗位关键词</button></div><div id="platforms" class="platform-grid"></div><p class="hint">投递前核对原文要求；列表加载后，可点浏览器工具栏中的插件，再点“读取当前网页”保存可识别的岗位链接。打开平台或岗位页面不会自动记为已投递。</p></details>
+      <div class="sort-control"><label for="sortOrder">岗位排序</label><select id="sortOrder"><option value="latest">最新发布优先（默认）</option><option value="updated">来源最新更新优先</option><option value="match">匹配度优先</option></select><span class="muted">按来源日期排序，不以本机读取时间冒充新发布。</span></div>
       <div id="jobs" class="job-list"></div><button id="loadMore" class="load-more" hidden>再展示 50 组</button>
     </section>
 

@@ -95,6 +95,16 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
 async function route(message) {
   await initialize();
   if (message.type === "initialize") return { ok: true, version: R.VERSION, buildId: R.BUILD_ID };
+  if (message.type === "ensureFresh") {
+    const state = await chrome.storage.local.get(["profile", "scan", "lastFullScanStartedAt"]);
+    if (!R.profileReady(R.profile(state.profile))) return { ok: true, started: false, reason: "needs-profile" };
+    if (scanTask) return { ok: true, started: false, reason: "running" };
+    const attemptedAt = state.lastFullScanStartedAt || (state.scan?.mode === "all" ? state.scan.startedAt : null);
+    const retryAfter = state.scan?.outcome === "failed" ? 60000 : R.AUTO_REFRESH_MS;
+    if (attemptedAt && Date.now() - new Date(attemptedAt) < retryAfter) return { ok: true, started: false, reason: "recent", nextCheckAt: Number(new Date(attemptedAt)) + retryAfter };
+    startScan("all").catch(console.error);
+    return { ok: true, started: true, message: "正在连接公开来源，列表取得后立即显示，随后核对正文与投递线索。" };
+  }
   if (message.type === "scanNow") {
     const { profile } = await chrome.storage.local.get("profile");
     if (!R.profileReady(R.profile(profile))) throw Error("请先建立求职档案，至少填写一个目标岗位，再检查招聘。");
@@ -103,7 +113,7 @@ async function route(message) {
       queuedProfileScan = true;
       return { ok: true, started: false, queued: true, message: "资料已保存；当前检查结束后，将自动按新资料重新检索。" };
     }
-    startScan("all").catch(console.error);
+    startScan("all", undefined, { forceDetails: true }).catch(console.error);
     return { ok: true, started: !alreadyRunning, message: alreadyRunning ? "扫描已在进行，结果会逐项更新。" : "已开始联网检查，关闭弹窗后仍会继续。" };
   }
   if (message.type === "readCurrentPage") {
@@ -171,17 +181,20 @@ async function route(message) {
     const { jobs = [], applications = {}, profile } = await chrome.storage.local.get(["jobs", "applications", "profile"]);
     const job = jobs.find((j) => j.id === message.jobId) || applications[message.jobId]?.job;
     if (!job) throw Error("岗位不存在");
-    const response = await S.request(job.detailUrl);
-    const enriched = S.enrichResponse(job, response.content, response.url);
-    return serialWrite(async () => {
+    let enriched, failure;
+    try { const response = await S.request(job.detailUrl); enriched = S.enrichResponse(job, response.content, response.url); }
+    catch (error) { failure = error; enriched = { ...job, detailVerified: false, detailError: error.message, linkCheck: S.detailFailure(error) }; }
+    const result = await serialWrite(async () => {
       if (scanTask) throw Error("招聘检查已开始，请等待结束后再核实单条详情。");
       const latest = await chrome.storage.local.get(["jobs", "applications"]);
-      const updated = { ...job, ...enriched, detailError: enriched.detailError || "", legacy: false, lastCheckedAt: new Date().toISOString() };
+      const updated = { ...job, ...enriched, detailError: enriched.detailError || "", legacy: false };
       const patch = { jobs: R.mergeJobs([updated], latest.jobs || []) };
       if (latest.applications?.[job.id]) patch.applications = { ...latest.applications, [job.id]: { ...latest.applications[job.id], job: updated } };
       await chrome.storage.local.set(patch);
       return { ok: true, assessment: R.assess(updated, R.profile(profile)) };
     });
+    if (failure) throw failure;
+    return result;
   }
   if (message.type === "reportApplyAccess") return serialWrite(async () => {
     const state = await chrome.storage.local.get(["jobs", "applications", "accessReports"]);
@@ -224,9 +237,9 @@ async function route(message) {
   throw Error("未知操作");
 }
 
-function startScan(mode, snapshot) {
+function startScan(mode, snapshot, options = {}) {
   if (scanTask) return scanTask;
-  scanTask = initialize().then(() => performScan(mode, snapshot)).finally(() => {
+  scanTask = initialize().then(() => performScan(mode, snapshot, options)).finally(() => {
     scanTask = null;
     if (queuedProfileScan) { queuedProfileScan = false; startScan("all").catch(console.error); }
   });
@@ -236,7 +249,7 @@ function fingerprint(j) {
   return R.hash(JSON.stringify([j.title, j.company, j.degree, j.location, j.salaryLow, j.salaryHigh, j.salaryUnit,
     j.description, j.publishedAt, j.deadline, j.status, j.applyInfo?.status || "", (j.applyInfo?.routes || []).map((r) => [r.kind, r.url || r.value])]));
 }
-async function performScan(mode, snapshot) {
+async function performScan(mode, snapshot, options = {}) {
   const settings = await chrome.storage.local.get(null);
   const p = R.profile(settings.profile);
   if (mode !== "current" && !R.profileReady(p)) return { outcome: "needs-profile", running: false, message: "等待填写目标岗位后开始检查招聘。" };
@@ -246,8 +259,16 @@ async function performScan(mode, snapshot) {
   let scan = { runId, mode, running: true, startedAt, completedAt: null, outcome: "running", completedSources: 0,
     totalSources: sources.length, successfulSources: 0, failedSources: 0, readCount: 0, newCount: 0, updatedCount: 0,
     unchangedCount: 0, matchedCount: 0, message: "开始连接公开招聘来源" };
-  await chrome.storage.local.set({ scan });
-  const allFound = [], statuses = { ...(settings.sourceStatus || {}) }, logs = [];
+  await chrome.storage.local.set({ scan, ...(mode === "all" ? { lastFullScanStartedAt: startedAt } : {}) });
+  const allFound = [], statuses = { ...(settings.sourceStatus || {}) }, logs = [], detailTasks = new Map();
+  const publish = async (items, source) => {
+    const normalized = items.map((j) => R.normalizeJob(j, source, new Date().toISOString())).filter((j) => j && R.matchesRoles(j, p));
+    await serialWrite(async () => {
+      const current = await chrome.storage.local.get("jobs");
+      await chrome.storage.local.set({ jobs: R.mergeJobs(normalized, current.jobs || []) });
+    });
+    return normalized;
+  };
   try {
     await S.mapLimit(sources, 3, async (source) => {
       const progress = async (message) => {
@@ -257,7 +278,10 @@ async function performScan(mode, snapshot) {
       };
       try {
         const result = snapshot ? S.parsePage(snapshot, source) : await S.fetchSource(source, p, progress);
-        const detailErrors = mode === "current" ? [] : await S.enrich(result.items, p, settings.jobs || [], progress);
+        await publish(result.items, source);
+        await progress(`列表已取得 ${result.items.length} 条，正在核对详情；看板已更新`);
+        const detailErrors = mode === "current" ? [] : await S.enrich(result.items, p, settings.jobs || [], progress, { force: options.forceDetails, detailTasks });
+        await publish(result.items, source);
         const normalized = result.items.map((j) => R.normalizeJob(j, source, new Date().toISOString())).filter(Boolean);
         allFound.push(...normalized.filter((j) => R.matchesRoles(j, p)));
         const status = { name: source.name, url: source.url, running: false, ok: true, checkedAt: new Date().toISOString(),

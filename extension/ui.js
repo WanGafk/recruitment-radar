@@ -15,6 +15,14 @@ let initialized = false;
 let toastTimer;
 let visibleJobs = 50;
 let backupToRestore;
+let automaticChecking = false;
+async function checkFreshness() {
+  if (!initialized || document.hidden || automaticChecking || !R.profileReady(data.profile)) return;
+  automaticChecking = true;
+  try { const result = await send("ensureFresh"); if (result.started) notify(result.message); }
+  catch (error) { notify(`自动检查未能启动：${error.message}`, "error"); }
+  finally { automaticChecking = false; }
+}
 function notify(s, tone = "info") {
   $("#notice").textContent = s;
   const toast = $("#toast");
@@ -79,6 +87,7 @@ async function init() {
   }
   document.querySelectorAll("[data-version]").forEach((el) => { el.textContent = R.VERSION; });
   if (data.lastUpgrade?.buildId === R.BUILD_ID && Date.now() - data.lastUpgrade.at < 120000) notify(`已升级至 ${R.VERSION}，原有资料和求职进度已保留。`, "success");
+  await checkFreshness();
 }
 function renderAll() { renderScan(); renderSources(); renderJobs(); renderApplications(); renderPlatforms(); }
 function renderPlatforms() {
@@ -96,6 +105,7 @@ function renderScan() {
   $("#scanTitle").textContent = title;
   $("#scanMessage").textContent = scan?.message || scan?.error || "点击“检查最新招聘”，将实际连接已启用的公开来源。旧版记录移入历史，不会冒充近期新岗位。";
   $("#lastSuccess").textContent = `最近取得列表数据：${formatDate(data.lastSuccessAt, true)}${scan?.completedAt ? ` · 本次结束：${formatDate(scan.completedAt, true)}` : ""}`;
+  $("#freshnessStatus").textContent = !R.profileReady(p) ? "保存目标岗位后，打开插件会自动检查公开来源。" : scan?.running ? "正在联网检查，先显示已取得的列表，正文与投递入口随后更新。" : "打开插件自动检查；停留时每 5 分钟检查一次，5 分钟内重复打开复用本次结果。可随时手动检查；来源没有新增时不会制造新岗位。";
   $(".scan-banner").className = `scan-banner ${["failed", "interrupted", "no-sources"].includes(scan?.outcome) ? "failed" : scan?.outcome === "partial" ? "partial" : ""}`;
   const progress = $("#scanProgress"); progress.hidden = !scan?.running;
   progress.max = scan?.totalSources || 1; progress.value = scan?.completedSources || 0;
@@ -119,7 +129,7 @@ function accessOf(job) { return R.applicationAccess(job, data.accessReports?.[jo
 function primaryApplyAction(job) {
   const access = accessOf(job), route = access.routes.find((r) => r.kind === "link");
   if (route) return link(route.url, "打开原文报名入口", "button primary");
-  if (access.status === "platform") return link(job.detailUrl, "查看原平台岗位（需账号确认）", "button primary");
+  if (access.status === "platform") return link(job.detailUrl, "打开职位原文（需账号确认）", "button primary");
   return `<button class="primary" data-action="routes">${access.status === "email" ? "查看简历邮箱" : "查找校外投递入口"}</button>`;
 }
 function jobCard(job, application, alternatives = []) {
@@ -133,15 +143,16 @@ function jobCard(job, application, alternatives = []) {
     <div class="card-top"><div><p class="company-name">${esc(job.company || "企业名称待确认")} ${job.companyType ? ` · ${esc(job.companyType)}` : ""}</p><h2 class="job-title">${esc(job.title)}</h2></div><span class="salary">${esc(salary(job))}</span></div>
     <div class="badges">${isNew ? '<span class="badge green">本次新发现</span>' : ""}<span class="badge">${job.kind === "announcement" ? "综合招聘公告" : "职位记录"}</span>${a.tags.map((t) => `<span class="badge">${R.TYPE_NAMES[t]}</span>`).join("")}<span class="badge ${a.eligibility === "excluded" ? "bad" : "warn"}">${eligibilityLabel(a)}</span>${job.legacy ? '<span class="badge warn">旧版历史 · 未重新核实</span>' : ""}${saved ? `<span class="badge green">${R.STAGES[saved.stage]}</span>` : ""}</div>
     <div class="job-meta"><span>地区：${esc(job.location || "未注明")}</span><span>学历：${esc(job.degree || "未注明")}</span>${job.major ? `<span>专业：${esc(job.major.slice(0, 150))}</span>` : ""}${job.companySize ? `<span>规模：${esc(job.companySize)}</span>` : ""}</div>
-    <div class="job-meta"><span>原始发布：${formatDate(job.publishedAt)}</span><span>来源更新：${formatDate(job.updatedAt)}</span><span>本机读取：${formatDate(job.lastCheckedAt, true)}</span>${job.deadline ? `<span>截止：${formatDate(job.deadline)}</span>` : ""}</div>
+    <div class="job-meta"><span>原始发布：${formatDate(job.publishedAt, true)}</span><span>来源更新：${formatDate(job.updatedAt, true)}</span><span>列表读取：${formatDate(job.lastCheckedAt, true)}</span>${job.deadline ? `<span>截止：${formatDate(job.deadline)}</span>` : ""}</div>
+    <p class="listing-freshness ${lastSeenThisRun ? "good" : "warn"}">${lastSeenThisRun ? "本次已从来源列表读取" : "本次尚未从来源列表重新读取 · 保留历史记录，不代表已下线"}${job.linkCheck ? ` · 正文链接${({ available: "可访问", login: "需要登录", unavailable: "无法访问", error: "检查失败" })[job.linkCheck.status] || "待核实"}（${formatDate(job.linkCheck.checkedAt, true)}）` : " · 正文链接尚待核实"}</p>
     <p class="access-summary"><span class="badge ${["link", "email"].includes(access.status) ? "green" : "warn"}">${esc(access.label)}</span><span>${esc(access.evidence)}${access.checkedAt ? ` · 核对于 ${formatDate(access.checkedAt, true)}` : ""}</span></p>
     ${saved?.interviewAt ? `<p class="interview-time">面试：${formatDate(saved.interviewAt, true)}${new Date(saved.interviewAt).valueOf() < Date.now() ? " · 时间已过，请更新进度" : ""}</p>` : ""}
     ${saved?.notes ? `<p class="app-notes">${esc(saved.notes)}</p>` : ""}
     ${issues.length ? `<p class="cautions">${issues.slice(0, 4).map(esc).join("；")}</p>` : ""}
     ${job.description ? `<details><summary class="muted">查看招聘正文与匹配依据</summary><div class="evidence">${esc(job.description.slice(0, 4500))}${job.description.length > 4500 ? "\n（正文较长，请打开原文查看全部）" : ""}</div><p class="muted">匹配依据：${esc(a.reasons.join("；") || "资料不足")}。学历证据：${esc(a.evidence.degree)}；专升本：${esc(a.evidence.transfer)}。</p></details>` : ""}
-    <div class="card-actions">${primaryApplyAction(job)}${["link", "platform"].includes(access.status) ? '<button data-action="routes">投递渠道与替代入口</button>' : ""}<button data-action="application">${saved ? "更新求职进度" : "加入有意向"}</button><details class="more-actions"><summary>更多操作</summary><button data-action="company">核验企业</button><button data-action="verify">重新核实详情</button>${link(job.detailUrl, "查看招聘原文")}</details></div>
+    <div class="card-actions">${primaryApplyAction(job)}${access.status !== "platform" ? link(job.detailUrl, "查看职位原文") : ""}${["link", "platform"].includes(access.status) ? '<button data-action="routes">投递渠道与替代入口</button>' : ""}<button data-action="application">${saved ? "更新求职进度" : "加入有意向"}</button><details class="more-actions"><summary>更多操作</summary><button data-action="company">核验企业</button><button data-action="verify">重新核实详情</button></details></div>
     ${alternatives.length ? `<details><summary>相似招聘记录 ${alternatives.length + 1} 条 · 展开其他原文</summary><p class="hint">企业、岗位名、地区、薪资、学历和发布日相同，暂归为一组；保留各条链接供你确认是否同一岗位。</p>${alternatives.map((j) => link(j.detailUrl, `${j.sourceLabel || j.sourceName || "招聘来源"} · ${accessOf(j).label}`)).join(" ")}</details>` : ""}
-    <p class="source-line">来源：${esc(job.sourceName || "旧版记录")}${job.sourceLabel && job.sourceLabel !== job.sourceName ? ` · 原始标注：${esc(job.sourceLabel)}` : ""}。${job.detailVerified ? `正文核实于 ${formatDate(job.detailCheckedAt, true)}` : "尚未取得可核实的完整正文"}。${saved?.companyChecked ? `企业信息由你手动标记已核验（${formatDate(saved.companyCheckedAt)}）` : "企业信用尚未核验"}</p>
+    <p class="source-line">来源：${esc(job.sourceName || "旧版记录")}${job.sourceLabel && job.sourceLabel !== job.sourceName ? ` · 原始标注：${esc(job.sourceLabel)}` : ""}。${job.detailVerified ? `正文核实于 ${formatDate(job.detailCheckedAt, true)}` : "尚未取得可核实的完整正文"}。${saved?.companyChecked ? `企业信息由你手动标记已核验（${formatDate(saved.companyCheckedAt)}）` : "企业信用尚未核验"} ${link(job.sourceUrl, "查看来源网站", "source-link")}</p>
   </article>`;
 }
 function renderJobs() {
@@ -162,8 +173,8 @@ function renderJobs() {
     if ($("#originFilter").value && (j.sourceLabel || j.sourceName) !== $("#originFilter").value) return false;
     if (query && !`${j.title} ${j.company} ${j.location} ${j.description}`.toLowerCase().includes(query)) return false;
     return true;
-  }).sort((left, right) => right.a.score - left.a.score || new Date(right.j.publishedAt || 0) - new Date(left.j.publishedAt || 0));
-  const groups = R.groupSimilar(result.map(({ j }) => j));
+  });
+  const groups = R.groupSimilar(R.sortJobs(result.map(({ j }) => j), p, $("#sortOrder").value));
   $("#resultCount").textContent = `${groups.length} 组／${result.length} 条记录 · 已展示 ${Math.min(visibleJobs, groups.length)} 组`;
   $("#loadMore").hidden = groups.length <= visibleJobs;
   $("#jobs").innerHTML = groups.length ? groups.slice(0, visibleJobs).map((group) => {
@@ -239,7 +250,7 @@ function openRoutes(job) {
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => goToView(button.dataset.view)));
 document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.close}`).close()));
 globalThis.addEventListener("hashchange", () => activate(location.hash.slice(1)));
-for (const id of ["#search", "#scope", "#type", "#onlyRegion", "#showExcluded", "#originFilter", "#accessFilter"]) $(id).addEventListener(id === "#search" ? "input" : "change", () => { visibleJobs = 50; renderJobs(); });
+for (const id of ["#search", "#scope", "#type", "#onlyRegion", "#showExcluded", "#originFilter", "#accessFilter", "#sortOrder"]) $(id).addEventListener(id === "#search" ? "input" : "change", () => { visibleJobs = 50; renderJobs(); });
 $("#loadMore").addEventListener("click", () => { visibleJobs += 50; renderJobs(); });
 $("#platformKeyword").addEventListener("input", renderPlatforms);
 $("#copyKeyword").addEventListener("click", () => action(async () => { await navigator.clipboard.writeText($("#platformKeyword").value.trim() || data.profile.roles[0] || data.profile.major); notify("岗位关键词已复制，可以粘贴到平台官网搜索框。"); }));
@@ -406,9 +417,13 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (changes.scan?.oldValue?.running && changes.scan.newValue && !changes.scan.newValue.running) notify(changes.scan.newValue.message || "检查已结束，请查看本次结果。", changes.scan.newValue.outcome === "failed" ? "error" : "success");
   for (const [key, value] of Object.entries(changes)) data[key] = value.newValue;
   data.profile = R.profile(data.profile);
+  if (changes.scan?.newValue && !changes.scan.newValue.running) renderScan();
   for (const key of Object.keys(changes)) pendingChanges.add(key);
   if (!renderTimer) renderTimer = setTimeout(flushChanges, 80);
 });
+document.addEventListener("visibilitychange", () => { if (!document.hidden) checkFreshness(); });
+globalThis.addEventListener("focus", () => checkFreshness());
+setInterval(() => { if (!document.hidden && initialized) { renderScan(); checkFreshness(); } }, 60000);
 init().catch((e) => {
   pendingForm($("#profileForm"), false);
   feedback("#profileSaveStatus", `资料加载失败：${e.message}，请刷新工作台重试。`, "error");

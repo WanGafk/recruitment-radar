@@ -1,5 +1,6 @@
 /* Shared model: all suitability labels retain the original recruitment evidence. */
 globalThis.Radar = (() => {
+  const AUTO_REFRESH_MS = 5 * 60000, DETAIL_CACHE_MS = 5 * 60000;
   const DEFAULT_PROFILE = {
     major: "", degree: "unknown", route: "other", schoolTier: "unknown", graduation: "", schoolName: "", careerStage: "unknown",
     roles: [], regions: [], skills: [], experienceYears: null, availableDays: null, internMonths: null,
@@ -75,6 +76,8 @@ globalThis.Radar = (() => {
     const routes = fresh ? (Array.isArray(saved.routes) ? saved.routes : []).filter((r) => r && (r.kind === "email" ? /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+\.[a-z]{2,}$/i.test(r.value) : r.kind === "link" && publicUrl(r.url) && !schoolUrl(r.url))).slice(0, 5) : [];
     const base = { routes, checkedAt: fresh ? saved.checkedAt : null, evidence: fresh ? text(saved.evidence) : "", restrictedOriginal: report?.status === "school-login" || fresh && saved.status === "school-login" };
     if (report?.status === "unavailable") return { ...base, routes: [], status: "unavailable", label: "你标记原站入口失效", evidence: "本机手动记录，可在投递渠道窗口撤销" };
+    if (["unavailable", "error"].includes(job.linkCheck?.status) && (!saved?.checkedAt || new Date(job.linkCheck.checkedAt) >= new Date(saved.checkedAt))) return { ...base, routes: [], checkedAt: job.linkCheck.checkedAt,
+      status: job.linkCheck.status === "unavailable" ? "unavailable" : "unknown", label: job.linkCheck.status === "unavailable" ? "最近检查：原文链接无法访问" : "最近检查失败 · 入口待核实", evidence: job.linkCheck.message };
     if (routes.length) return { ...base, status: routes.some((r) => r.kind === "link") ? "link" : "email", label: routes.some((r) => r.kind === "link") ? "原文提供校外报名链接" : "原文提供简历邮箱" };
     if (base.restrictedOriginal) return { ...base, status: "school-login", label: "原站需要院校账号", evidence: report?.status ? "用户手动标记：原站需要院校账号" : saved.evidence };
     if (fresh && saved.status === "school-unknown") return { ...base, status: "school-unknown", label: "校站登录要求待核实" };
@@ -208,7 +211,7 @@ globalThis.Radar = (() => {
       const verified = old?.detailVerified && !job.detailVerified;
       byId.set(job.id, { ...old, ...job, intern: Boolean(old?.intern || job.intern), description: verified ? old.description : job.description,
         applyInfo: job.applyInfo || old?.applyInfo || null,
-        detailVerified: verified || job.detailVerified, firstSeenAt: old?.firstSeenAt || job.firstSeenAt,
+        detailVerified: job.linkCheck && job.linkCheck.status !== "available" ? false : verified || job.detailVerified, firstSeenAt: old?.firstSeenAt || job.firstSeenAt,
         sourceIds: list([...(old?.sourceIds || []), ...(job.sourceIds || [])]) });
     }
     return [...byId.values()].sort((a, b) => new Date(b.publishedAt || b.updatedAt || 0) - new Date(a.publishedAt || a.updatedAt || 0)).slice(0, 1200);
@@ -222,6 +225,14 @@ globalThis.Radar = (() => {
     }
     return [...groups.values()];
   }
-  return { VERSION: "2.4.0", BUILD_ID: "20261021-apply-access-1", SOURCE_CATALOG: 3, DEFAULT_PROFILE, SOURCES, STAGES, TYPE_NAMES, DEGREE_NAMES, CAREER_NAMES, ROLE_TEMPLATES, platforms, text, list, hash, safeUrl, publicUrl, schoolUrl, applicationAccess, matchesAccess, canonical, iso, profile, profileReady, roleTerms, matchesRoles, normalizeJob, assess, mergeJobs, groupSimilar };
+  function sortJobs(jobs, p, order = "latest") {
+    const timestamp = (value) => Number(new Date(value || 0)) || 0;
+    return jobs.map((j) => ({ j, score: order === "match" ? assess(j, p).score : 0 })).sort((a, b) =>
+      (order === "match" ? b.score - a.score : order === "updated" ? timestamp(b.j.updatedAt) - timestamp(a.j.updatedAt) : 0)
+      || timestamp(b.j.publishedAt) - timestamp(a.j.publishedAt)
+      || timestamp(b.j.updatedAt) - timestamp(a.j.updatedAt)
+      || String(a.j.id).localeCompare(String(b.j.id))).map(({ j }) => j);
+  }
+  return { VERSION: "2.5.0", BUILD_ID: "20261021-live-refresh-1", AUTO_REFRESH_MS, DETAIL_CACHE_MS, SOURCE_CATALOG: 3, DEFAULT_PROFILE, SOURCES, STAGES, TYPE_NAMES, DEGREE_NAMES, CAREER_NAMES, ROLE_TEMPLATES, platforms, text, list, hash, safeUrl, publicUrl, schoolUrl, applicationAccess, matchesAccess, canonical, iso, profile, profileReady, roleTerms, matchesRoles, normalizeJob, assess, mergeJobs, groupSimilar, sortJobs };
 })();
 

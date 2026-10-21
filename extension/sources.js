@@ -188,13 +188,13 @@ globalThis.RadarSources = (() => {
     return { ...job, description, detailVerified: true, detailCheckedAt: new Date().toISOString(),
       ...(deadline ? { deadline: `${deadline[1]}-${deadline[2].padStart(2, "0")}-${deadline[3].padStart(2, "0")}T23:59:59+08:00` } : {}),
       ...(daily ? { salaryLow: Number(daily[1]), salaryHigh: Number(daily[2] || daily[1]), salaryUnit: "day", salaryEvidence: daily[0] } : {}),
-      ...(/职位已下线|该岗位已停止招聘|该职位已结束|招聘已结束/.test(description) ? { status: "closed" } : {}) };
+      status: /职位已下线|该岗位已停止招聘|该职位已结束|招聘已结束|该职位已被删除/.test(description) ? "closed" : "listed" };
   }
   function enrichResponse(job, html, finalUrl = job.detailUrl) {
     const gate = loginGate(html, finalUrl);
-    if (gate) return { ...job, applyInfo: applicationInfo(job, html, finalUrl), detailError: gate === "school-login" ? "原站需要院校账号，未获取公开正文" : "原站需要登录，正文未核实" };
+    if (gate) return { ...job, detailVerified: false, linkCheck: { status: "login", checkedAt: new Date().toISOString(), finalUrl }, applyInfo: applicationInfo(job, html, finalUrl), detailError: gate === "school-login" ? "原站需要院校账号，未获取公开正文" : "原站需要登录，正文未核实" };
     const region = detailBody(html, job.detailUrl);
-    const result = { ...enrichText(job, plain(region).slice(0, 18000)), applyInfo: applicationInfo(job, html, finalUrl, region) };
+    const result = { ...enrichText(job, plain(region).slice(0, 18000)), detailError: "", linkCheck: { status: "available", checkedAt: new Date().toISOString(), finalUrl }, applyInfo: applicationInfo(job, html, finalUrl, region) };
     if (/\.ncss\.cn$/.test(new URL(job.detailUrl).hostname)) {
       const origin = html.match(/<span\b[^>]*class=["']source-sp["'][^>]*>([\s\S]*?)<\/span>/i);
       if (origin) { result.sourceLabel = plain(origin[1]); result.sourceType = origin[0].match(/data-sourcesType=["']([^"']*)/i)?.[1] || job.sourceType || ""; }
@@ -203,17 +203,21 @@ globalThis.RadarSources = (() => {
     }
     return result;
   }
-  async function enrich(items, p, previous, progress) {
+  function detailFailure(error) {
+    return { status: /HTTP (?:404|410)\b/.test(error.message) ? "unavailable" : "error", checkedAt: new Date().toISOString(), message: error.message };
+  }
+  async function enrich(items, p, previous, progress, options = {}) {
     const byId = new Map(previous.map((j) => [R.canonical(j.detailUrl), j]));
     const sorted = [...items].sort((a, b) => {
       const rank = (j) => (R.matchesRoles(j, p) ? 50 : 0) + (p.regions.some((r) => j.location?.includes(r)) ? 30 : 0);
-      return rank(b) - rank(a);
+      return Number(new Date(b.publishedAt || 0)) - Number(new Date(a.publishedAt || 0)) || rank(b) - rank(a);
     });
     const targets = sorted.filter((j) => {
       const cached = byId.get(R.canonical(j.detailUrl));
-      if (cached?.detailVerified && cached.applyInfo?.version === 1 && Date.now() - new Date(cached.detailCheckedAt).valueOf() < 24 * 3600000 && Date.now() - new Date(cached.applyInfo.checkedAt).valueOf() < 24 * 3600000) {
+      const sameSourceRevision = R.iso(j.updatedAt) === R.iso(cached?.updatedAt) && R.iso(j.publishedAt) === R.iso(cached?.publishedAt);
+      if (!options.force && sameSourceRevision && cached?.detailVerified && cached.applyInfo?.version === 1 && Date.now() - new Date(cached.detailCheckedAt).valueOf() < R.DETAIL_CACHE_MS && Date.now() - new Date(cached.applyInfo.checkedAt).valueOf() < R.DETAIL_CACHE_MS) {
         Object.assign(j, { description: cached.description, detailVerified: true, detailCheckedAt: cached.detailCheckedAt, deadline: cached.deadline,
-          applyInfo: cached.applyInfo,
+          applyInfo: cached.applyInfo, linkCheck: cached.linkCheck, status: cached.status, detailError: "",
           ...(cached.detailLocation ? { detailLocation: cached.detailLocation, location: cached.detailLocation } : {}),
           ...(cached.salaryUnit === "day" ? { salaryUnit: "day", salaryLow: cached.salaryLow, salaryHigh: cached.salaryHigh, salaryEvidence: cached.salaryEvidence } : {}) });
         return false;
@@ -222,8 +226,12 @@ globalThis.RadarSources = (() => {
     }).slice(0, items[0]?.kind === "announcement" ? 8 : 10);
     const errors = [];
     await mapLimit(targets, 2, async (job, index) => {
-      try { const { content, url } = await request(job.detailUrl); Object.assign(job, enrichResponse(job, content, url)); }
-      catch (e) { errors.push({ url: job.detailUrl, error: e.message }); job.detailError = e.message; }
+      try {
+        const key = R.canonical(job.detailUrl), shared = options.detailTasks;
+        let task = shared?.get(key);
+        if (!task) { task = request(job.detailUrl).then(({ content, url }) => enrichResponse(job, content, url)); shared?.set(key, task); }
+        Object.assign(job, await task);
+      } catch (e) { errors.push({ url: job.detailUrl, error: e.message }); job.detailError = e.message; job.linkCheck = detailFailure(e); }
       await progress(`核实详情 ${index + 1}/${targets.length}：${job.title.slice(0, 35)}`);
     });
     return errors;
@@ -267,5 +275,5 @@ globalThis.RadarSources = (() => {
     const links = [...content.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)].map((m) => ({ href: R.safeUrl(decode(m[1]), source.url), title: plain(m[2]), context: "" }));
     return parsePage({ url: source.url, links }, source);
   }
-  return { request, plain, decode, mapLimit, ncssJob, parseTiangong, detailBody, detailText, loginGate, applicationInfo, enrichText, enrichResponse, enrich, collectPage, parsePage, isDetail, fetchSource };
+  return { request, plain, decode, mapLimit, ncssJob, parseTiangong, detailBody, detailText, loginGate, applicationInfo, enrichText, enrichResponse, detailFailure, enrich, collectPage, parsePage, isDetail, fetchSource };
 })();
