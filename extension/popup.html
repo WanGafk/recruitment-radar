@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>招聘雷达 · 求职工作台</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="hero">
+      <div><p class="eyebrow">公开招聘来源 · 按你的资料找岗位</p><h1>招聘雷达 <span class="version" data-version>2.4.0</span></h1><p id="profileSummary" class="muted"></p></div>
+      <div class="actions"><button id="editProfile">建立求职档案</button><button id="openDashboard">独立工作台</button><button id="readPage">读取当前网页</button><button id="scanNow" class="primary">检查最新招聘</button></div>
+    </header>
+    <section class="scan-banner" aria-live="polite"><strong id="scanTitle">等待连接</strong><p id="scanMessage"></p><p id="lastSuccess" class="muted"></p><progress id="scanProgress" hidden></progress></section>
+    <p id="notice" class="notice" role="status" aria-live="polite"></p>
+    <nav class="tabs" aria-label="工作区"><button data-view="jobs" class="active">招聘看板</button><button data-view="applications">求职进度</button><button data-view="profile">我的求职资料</button><button data-view="sources">来源与扫描记录</button></nav>
+
+    <section id="jobsView" class="view active" tabindex="-1">
+      <div class="stats"><button data-metric="recent"><strong id="recentCount">0</strong><span>近期校外渠道线索组 · 查看</span></button><button data-metric="new"><strong id="newCount">0</strong><span>本次新发现 · 查看</span></button><button data-metric="sources"><strong id="sourceCount">0</strong><span>成功／启用自动通道 · 查看</span></button><button data-metric="interview"><strong id="interviewCount">0</strong><span>面试邀约 · 查看</span></button></div>
+      <div class="toolbar"><input id="search" type="search" placeholder="搜索岗位、企业或地区" aria-label="搜索岗位"><select id="scope" aria-label="记录范围"><option value="recent">近期发布（有原始日期）</option><option value="unknown">发布日期未知 · 待核实</option><option value="new">本次首次发现</option><option value="run">本次重新读取到的记录</option><option value="all">全部记录与历史</option></select><select id="type" aria-label="招聘类型"><option value="">全部类型</option><option value="intern">实习</option><option value="campus">校招</option><option value="autumn">秋招</option><option value="social">社招（原文明确）</option></select></div>
+      <div class="filters"><label><input id="onlyRegion" type="checkbox">只看意向地区／全国岗位</label><label><input id="showExcluded" type="checkbox">显示明确不符合条件的记录</label><select id="originFilter" aria-label="原始招聘来源"><option value="">全部原始来源</option></select><select id="accessFilter" aria-label="投递渠道"><option value="off-campus">校外渠道线索（默认）</option><option value="public">原文有报名链接／简历邮箱</option><option value="school">校站受限／待核实</option><option value="unknown">其他待核实／失效入口</option><option value="all">全部（含校站待核实）</option></select><span id="resultCount" class="muted"></span></div>
+      <p class="hint">默认展示已发现校外渠道线索的记录，包括仍需平台账号确认的岗位。校站受限、仅有高校来源且投递方式未核实、其他未知入口默认隐藏，可切换“全部”查看。公开正文不代表有投递资格。</p>
+      <details class="platform-hub"><summary>更多平台找岗位 · 14 个官方入口</summary><p class="hint">自动列表来自国家就业平台及其公开聚合、高校公告，并非全网全量。以下为平台官网入口，不计入自动接入数量；可自行选择地区、实习与校招，部分需要登录。</p><div class="toolbar"><input id="platformKeyword" type="search" maxlength="100" aria-label="跨平台岗位关键词"><button id="copyKeyword">复制岗位关键词</button></div><div id="platforms" class="platform-grid"></div><p class="hint">投递前核对原文要求；列表加载后，可点浏览器工具栏中的插件，再点“读取当前网页”保存可识别的岗位链接。打开平台或岗位页面不会自动记为已投递。</p></details>
+      <div id="jobs" class="job-list"></div><button id="loadMore" class="load-more" hidden>再展示 50 组</button>
+    </section>
+
+    <section id="applicationsView" class="view">
+      <div class="section-head"><div><h2>求职进度</h2><p class="muted">手动记录意向、投递与面试；进度和备注保存在本机。点击阶段统计可筛选。</p></div><details class="backup-menu"><summary>数据备份与恢复</summary><button id="exportData">导出本机数据备份</button><button id="importData">恢复岗位与求职进度</button><input id="backupFile" type="file" accept=".json,application/json" hidden></details></div>
+      <div id="stageStats" class="stats stages"></div>
+      <div class="toolbar"><input id="applicationSearch" placeholder="搜索企业、岗位、备注" aria-label="搜索求职记录"><select id="stageFilter" aria-label="阶段筛选"><option value="">全部阶段</option><option value="interested">有意向</option><option value="applied">已投递</option><option value="interview">面试邀约</option><option value="offer">收到 Offer</option><option value="closed">已结束</option></select></div>
+      <div id="applications" class="job-list"></div>
+    </section>
+
+    <section id="profileView" class="view">
+      <div class="section-head"><div><h2>我的求职档案</h2><p class="muted">每个人填写自己的资料。目标岗位用于检索，其他资料用于本机筛选与核对；不要求填写姓名、手机号、身份证。检索不上传学历、学校、技能、备注或求职进度。</p></div></div>
+      <div class="profile-steps" aria-label="建立档案流程"><span>1 填写自己的情况</span><span>2 选择求职方向</span><span>3 保存并匹配岗位</span></div>
+      <form id="profileForm">
+        <div class="form-grid">
+          <h3 class="wide form-section-title">基本情况</h3>
+          <label>求职阶段<select name="careerStage"><option value="unknown">暂不填写</option><option value="student">在校生 · 寻找实习</option><option value="graduate">应届毕业生 · 校园招聘</option><option value="experienced">已有工作经验 · 社会招聘</option><option value="returning">转行／重返职场</option></select></label>
+          <label>工作年限（可不填）<input name="experienceYears" type="number" min="0" max="60" step="0.5" placeholder="0 为暂无正式工作经验"></label>
+          <label>所学专业（可不填）<input name="major" maxlength="100" placeholder="例如：计算机、会计学、机械设计、视觉传达"></label>
+          <label>毕业年月（可不填）<input name="graduation" type="month"></label>
+          <label>最高学历<select name="degree"><option value="unknown">暂不填写</option><option value="secondary">高中／中职及以下</option><option value="college">专科</option><option value="bachelor">本科</option><option value="master">硕士</option><option value="doctor">博士</option></select></label>
+          <label>教育经历<select name="route"><option value="other">未填写／其他</option><option value="transfer">专升本（院校条件需单独核实）</option><option value="regular">常规学制</option></select></label>
+          <label>学校名称（可不填，仅保存在本机）<input name="schoolName" maxlength="100" placeholder="填写自己的学校，不自动推定院校类别"></label>
+          <label>院校类别（仅用于公告条件核对）<select name="schoolTier"><option value="ordinary">普通院校（非 985／211）</option><option value="211">211 院校</option><option value="985">985 院校</option><option value="double-first">双一流院校</option><option value="unknown">未填写／需自行核实</option></select></label>
+          <h3 class="wide form-section-title">求职方向</h3>
+          <div class="wide role-template"><label>参考方向（可选，不限制专业）<select id="roleTemplate"></select></label><button type="button" id="applyRoleTemplate">填入参考岗位</button><p class="hint">参考项只是可编辑示例；也可以直接输入任何专业的岗位。</p></div>
+          <label class="wide">目标岗位（必填，逗号分隔，最多 6 个）<input name="roles" required maxlength="600" pattern=".*[^\s，,、;；].*" placeholder="例如：会计，财务助理；或前端开发，软件测试"></label>
+          <label class="wide">意向省份／城市（逗号分隔；留空为全国）<input name="regions" placeholder="填写自己的意向省份或城市，也可以留空"></label>
+          <fieldset class="wide"><legend>优先招聘类型（用于排序，可多选）</legend><label><input name="types" value="intern" type="checkbox">实习</label><label><input name="types" value="campus" type="checkbox">校园招聘</label><label><input name="types" value="autumn" type="checkbox">秋招</label><label><input name="types" value="social" type="checkbox">社会招聘</label></fieldset>
+          <label class="wide">技能关键词（可不填，逗号分隔）<input name="skills" maxlength="1200" placeholder="例如：Excel、Java、英语、CAD、Photoshop"><span class="muted">正文明确提及的技能会作为排序依据，不代表已满足熟练度要求。</span></label>
+          <label>期望月薪下限（元，0 为未设置）<input name="minMonthly" type="number" min="0" max="1000000" step="1"></label>
+          <label>实习日薪下限（元，0 为未设置）<input name="minDaily" type="number" min="0" max="10000" step="1"></label>
+          <label>近期发布范围<select name="maxAgeDays"><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="90">近 90 天</option><option value="365">近一年</option></select></label>
+          <label>每方向读取页数（有界读取）<select name="pageLimit"><option value="1">1 页 · 最多 20 条／来源</option><option value="2">2 页 · 最多 40 条／来源</option><option value="3">3 页 · 最多 60 条／来源</option></select></label>
+          <label>自动检查间隔<select name="intervalMinutes"><option value="15">15 分钟</option><option value="30">30 分钟</option><option value="60">1 小时</option><option value="180">3 小时</option></select></label>
+          <div class="check-stack"><label><input name="strictRegion" type="checkbox">只保留意向地区或全国岗位</label><label><input name="strictSalary" type="checkbox">隐藏薪资下限不足或未公开的记录</label></div>
+        </div>
+        <details class="profile-extra"><summary>实习到岗条件（可选）</summary><div class="form-grid"><label>每周可到岗天数<input name="availableDays" type="number" min="1" max="7" step="1" placeholder="例如 3"></label><label>可连续实习月数<input name="internMonths" type="number" min="1" max="36" step="1" placeholder="例如 6"></label></div><p class="hint">用于自己对照岗位安排，当前不会凭这些字段自动认定到岗条件符合。</p></details>
+        <p class="hint">当前自动来源以实习与校招为主，也收录部分社招；社招可结合平台入口继续搜索。求职阶段仅作档案信息，招聘类型由你勾选；未填学历不会被默认成本科。</p>
+        <p class="hint">日薪与月薪分别比较，不用假定工作天数换算。未设置薪资门槛时不因薪资过滤。支持所有企业规模与性质；招聘来源收录不等于企业信用已核验。</p>
+        <div class="form-actions"><button class="primary" type="submit">保存并查看岗位</button><p id="profileSaveStatus" class="form-status" role="status" aria-live="polite">保存后自动返回招聘看板，并按新资料检查岗位。</p></div>
+      </form>
+    </section>
+
+    <section id="sourcesView" class="view">
+      <div class="section-head"><div><h2>来源与扫描记录</h2><p class="muted">显示真实连接结果、公开接口地址和读取范围；不承诺覆盖全网或每次必有新增。</p></div></div>
+      <p class="hint">同一岗位在多个通道出现会按详情链接合并；智联、前程无忧等为国家平台公开聚合子集。更多平台官网入口在招聘看板的折叠区域中。</p><div id="sources" class="source-list"></div>
+      <form id="sourceForm" class="source-form"><input name="name" placeholder="自定义公开来源名称" required><input name="url" type="url" placeholder="https://…（含岗位链接的公开列表）" required><button type="submit">添加来源</button><p id="sourceSaveStatus" class="form-status" role="status"></p></form>
+      <h2 class="log-heading">最近扫描日志</h2><div id="logs" class="source-list"></div>
+    </section>
+
+    <footer>招聘雷达 <span data-version>2.4.0</span> · 原始职位与公开高校公告 · 数据与进度保存在本机</footer>
+  </main>
+  <dialog id="companyDialog"><div class="dialog-head"><h2>企业信息核验</h2><button data-close="companyDialog" aria-label="关闭">关闭</button></div><div id="companyContent"></div></dialog>
+  <dialog id="applicationDialog"><div class="dialog-head"><h2>记录求职进度</h2><button data-close="applicationDialog" aria-label="关闭">关闭</button></div><form id="applicationForm"><input name="jobId" type="hidden"><p id="applicationTitle"></p><label>当前阶段<select name="stage"><option value="interested">有意向</option><option value="applied">已投递</option><option value="interview">面试邀约</option><option value="offer">收到 Offer</option><option value="closed">已结束</option></select></label><label>面试时间（本机时区）<input name="interviewAt" type="datetime-local"></label><label>备注<textarea name="notes" rows="5" placeholder="面试方式、联系人核验结果、准备事项…"></textarea></label><label class="inline"><input name="companyChecked" type="checkbox">我已手动核验企业信息（个人记录）</label><p id="applicationSaveStatus" class="form-status" role="status"></p><button class="primary" type="submit">保存记录</button></form></dialog>
+  <div id="toast" class="toast" aria-live="polite" aria-atomic="true"></div>
+  <dialog id="welcomeDialog" aria-labelledby="welcomeTitle"><p class="eyebrow">欢迎使用招聘雷达</p><h2 id="welcomeTitle">先建立属于你的求职档案</h2><p class="hint">在校生、应届生或已有工作经验，都可以填写自己的情况和目标岗位。新用户从空白资料开始，不会套用他人的专业、地区或毕业年份。</p><ol class="welcome-steps"><li>填写求职阶段、学历及毕业信息，非必填项可以跳过。</li><li>选择目标岗位、城市、薪资与招聘类型。</li><li>保存后查看匹配依据，前往原网站完成投递。</li></ol><p class="muted">不要求注册或提供手机号。资料与求职进度保存在当前浏览器本机；账号与跨设备同步尚未提供。</p><div class="welcome-actions"><button id="welcomeStart" class="primary">开始建立档案</button><button id="welcomeBrowse">先浏览平台入口</button></div></dialog>
+  <dialog id="restoreDialog"><div class="dialog-head"><h2>恢复本机备份</h2><button data-close="restoreDialog">取消</button></div><form id="restoreForm"><p id="restoreSummary" class="hint"></p><p id="restoreStatus" class="form-status" role="status"></p><button type="submit" class="primary">确认合并备份</button></form></dialog>
+  <dialog id="routesDialog" aria-labelledby="routesDialogTitle"><div class="dialog-head"><h2 id="routesDialogTitle">投递渠道与替代入口</h2><button data-close="routesDialog">关闭</button></div><h3 id="routesTitle"></h3><p id="routeAccessLabel" class="access-label"></p><p id="routeAccessEvidence" class="hint"></p><h3>原文明确提供的方式</h3><div id="knownApplyRoutes"></div><div class="route-tools"><button id="checkApplyRoutes">重新核实公开投递线索</button><div id="applyOriginalLink"></div></div><h3>同公司其他近期线索</h3><div id="relatedApplyRoutes"></div><h3>到公开平台继续查找</h3><p class="hint">以下是搜索入口，尚未确认搜索结果中有同一岗位。可核对企业全称、岗位、工作地和招聘批次。</p><p id="applySearchKeyword" class="muted"></p><div class="company-links"><button id="copyApplyKeyword">复制企业与岗位关键词</button></div><div id="applySearchLinks" class="company-links"></div><form id="accessReportForm" class="access-report-form"><input name="jobId" type="hidden"><label>原站实际访问情况<select name="status"><option value="school-login">需要院校学号／校内账号</option><option value="unavailable">原站投递入口失效或打不开</option><option value="clear">撤销本机手动标记</option></select></label><p id="accessReportStatus" class="form-status" role="status"></p><button type="submit">保存入口反馈</button></form></dialog>
+  <script src="shared.js"></script><script src="upgrade.js"></script><script src="ui.js"></script>
+</body></html>
+
+
+
+

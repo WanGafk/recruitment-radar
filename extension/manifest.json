@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "招聘雷达 · 校招实习与求职进度",
+  "version": "2.4.0",
+  "description": "读取公开招聘列表，按个人资料筛选实习与校招，记录意向和面试，并提供企业核验入口。",
+  "permissions": ["storage", "alarms", "notifications", "tabs", "scripting", "activeTab"],
+  "host_permissions": ["https://*/*", "http://*/*"],
+  "icons": { "128": "icon.png" },
+  "action": { "default_title": "招聘雷达", "default_icon": "icon.png", "default_popup": "popup.html" },
+  "background": { "service_worker": "background.js" }
+}
+
+
+

@@ -1,0 +1,13 @@
+{
+  "name": "recruitment-radar",
+  "version": "2.4.0",
+  "private": true,
+  "description": "Recruitment source discovery and local job-application tracking browser extension",
+  "scripts": {
+    "check": "node scripts/check.cjs",
+    "test": "node scripts/check.cjs && node --test tests/core.test.cjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
