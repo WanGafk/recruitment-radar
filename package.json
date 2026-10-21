@@ -2,7 +2,7 @@
   "name": "recruitment-radar",
   "version": "2.4.0",
   "private": true,
-  "description": "Recruitment source discovery and local job-application tracking browser extension",
+  "description": "面向求职者的浏览器扩展，支持按个人档案筛选公开招聘信息、核对投递渠道，并在本机记录求职进度。",
   "scripts": {
     "check": "node scripts/check.cjs",
     "test": "node scripts/check.cjs && node --test tests/core.test.cjs"
