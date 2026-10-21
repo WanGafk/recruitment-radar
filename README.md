@@ -4,6 +4,14 @@
 
 当前版本：**2.4.0**。无运行时第三方依赖，无需启动服务器。
 
+## 下载插件
+
+**[下载招聘雷达 2.4.0 ZIP](https://github.com/WanGafk/recruitment-radar/releases/download/v2.4.0/recruitment-radar-2.4.0.zip)** · [版本说明与备用下载](https://github.com/WanGafk/recruitment-radar/releases/latest)
+
+下载 ZIP 后解压安装即可，使用插件不需要 Node.js。版本页面的 **Assets** 下请选择 `recruitment-radar-2.4.0.zip`；`Source code` 是完整开发源码。
+
+当前仓库为私有仓库，GitHub 下载需要登录并拥有仓库访问权限。仓库所有者也可以将插件 ZIP 单独发给使用者；安装和使用插件不需要 GitHub 账号。
+
 ## 主要功能
 
 - 空白档案建档：岗位方向、地区、学历、毕业年月、求职阶段、薪资、技能等可自行填写。
@@ -16,11 +24,13 @@
 
 ## 本地安装
 
-1. 下载或克隆本仓库。
+1. 从上方下载插件 ZIP，先解压到一个长期保留的文件夹。
 2. Edge 打开 `edge://extensions`；Chrome 打开 `chrome://extensions`。
 3. 开启开发者模式，选择“加载解压缩的扩展”。
-4. 选择本仓库的 **extension** 文件夹，其中包含 manifest.json。
-5. 点击浏览器工具栏中的招聘雷达，填写目标岗位并保存。
+4. 选择解压后的 **recruitment-radar-2.4.0** 文件夹，确认该层直接包含 `manifest.json`；不要选择 ZIP 文件。
+5. 点击浏览器工具栏中的招聘雷达，填写自己的目标岗位和求职资料并保存。
+
+开发者也可以下载或克隆本仓库源码，加载其中的 **extension** 文件夹。
 
 开发者需要保持载入目录稳定，以保留该浏览器中的扩展身份和本机数据。
 
