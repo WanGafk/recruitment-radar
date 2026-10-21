@@ -16,6 +16,7 @@ let toastTimer;
 let visibleJobs = 50;
 let backupToRestore;
 let automaticChecking = false;
+let nextRouteExpiry = Infinity;
 async function checkFreshness() {
   if (!initialized || document.hidden || automaticChecking || !R.profileReady(data.profile)) return;
   automaticChecking = true;
@@ -156,6 +157,8 @@ function jobCard(job, application, alternatives = []) {
   </article>`;
 }
 function renderJobs() {
+  const now = Date.now();
+  nextRouteExpiry = data.jobs.reduce((next, job) => { const expires = Number(new Date(job.applyInfo?.checkedAt)) + R.DETAIL_CACHE_MS; return expires > now ? Math.min(next, expires) : next; }, Infinity);
   const p = data.profile, scope = $("#scope").value, type = $("#type").value, query = $("#search").value.toLowerCase().trim();
   const scored = data.jobs.map((j) => ({ j, a: R.assess(j, p) }));
   $("#recentCount").textContent = R.groupSimilar(scored.filter(({ a, j }) => a.fresh && a.roleMatch && a.eligibility !== "excluded" && !j.legacy && R.matchesAccess(j, "off-campus", data.accessReports?.[j.id])).map(({ j }) => j)).length;
@@ -423,7 +426,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) checkFreshness(); });
 globalThis.addEventListener("focus", () => checkFreshness());
-setInterval(() => { if (!document.hidden && initialized) { renderScan(); checkFreshness(); } }, 60000);
+setInterval(() => { if (!document.hidden && initialized) { renderScan(); if (Date.now() >= nextRouteExpiry) { renderJobs(); renderApplications(); } checkFreshness(); } }, 60000);
 init().catch((e) => {
   pendingForm($("#profileForm"), false);
   feedback("#profileSaveStatus", `资料加载失败：${e.message}，请刷新工作台重试。`, "error");

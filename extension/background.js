@@ -102,7 +102,7 @@ async function route(message) {
     const attemptedAt = state.lastFullScanStartedAt || (state.scan?.mode === "all" ? state.scan.startedAt : null);
     const retryAfter = state.scan?.outcome === "failed" ? 60000 : R.AUTO_REFRESH_MS;
     if (attemptedAt && Date.now() - new Date(attemptedAt) < retryAfter) return { ok: true, started: false, reason: "recent", nextCheckAt: Number(new Date(attemptedAt)) + retryAfter };
-    startScan("all").catch(console.error);
+    startScan("all", undefined, { forceDetails: true }).catch(console.error);
     return { ok: true, started: true, message: "正在连接公开来源，列表取得后立即显示，随后核对正文与投递线索。" };
   }
   if (message.type === "scanNow") {

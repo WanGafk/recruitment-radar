@@ -72,7 +72,7 @@ globalThis.Radar = (() => {
   function applicationAccess(job, report) {
     const source = text(job.sourceLabel || job.sourceName);
     const saved = job.applyInfo;
-    const fresh = saved?.version === 1 && saved.checkedAt && Date.now() - new Date(saved.checkedAt).valueOf() < 24 * 3600000;
+    const fresh = saved?.version === 1 && saved.checkedAt && Date.now() - new Date(saved.checkedAt).valueOf() < DETAIL_CACHE_MS;
     const routes = fresh ? (Array.isArray(saved.routes) ? saved.routes : []).filter((r) => r && (r.kind === "email" ? /^[\w.!#$%&'*+/=?^`{|}~-]+@[a-z\d.-]+\.[a-z]{2,}$/i.test(r.value) : r.kind === "link" && publicUrl(r.url) && !schoolUrl(r.url))).slice(0, 5) : [];
     const base = { routes, checkedAt: fresh ? saved.checkedAt : null, evidence: fresh ? text(saved.evidence) : "", restrictedOriginal: report?.status === "school-login" || fresh && saved.status === "school-login" };
     if (report?.status === "unavailable") return { ...base, routes: [], status: "unavailable", label: "你标记原站入口失效", evidence: "本机手动记录，可在投递渠道窗口撤销" };
@@ -233,6 +233,6 @@ globalThis.Radar = (() => {
       || timestamp(b.j.updatedAt) - timestamp(a.j.updatedAt)
       || String(a.j.id).localeCompare(String(b.j.id))).map(({ j }) => j);
   }
-  return { VERSION: "2.5.0", BUILD_ID: "20261021-live-refresh-1", AUTO_REFRESH_MS, DETAIL_CACHE_MS, SOURCE_CATALOG: 3, DEFAULT_PROFILE, SOURCES, STAGES, TYPE_NAMES, DEGREE_NAMES, CAREER_NAMES, ROLE_TEMPLATES, platforms, text, list, hash, safeUrl, publicUrl, schoolUrl, applicationAccess, matchesAccess, canonical, iso, profile, profileReady, roleTerms, matchesRoles, normalizeJob, assess, mergeJobs, groupSimilar, sortJobs };
+  return { VERSION: "2.5.0", BUILD_ID: "20261021-live-refresh-2", AUTO_REFRESH_MS, DETAIL_CACHE_MS, SOURCE_CATALOG: 3, DEFAULT_PROFILE, SOURCES, STAGES, TYPE_NAMES, DEGREE_NAMES, CAREER_NAMES, ROLE_TEMPLATES, platforms, text, list, hash, safeUrl, publicUrl, schoolUrl, applicationAccess, matchesAccess, canonical, iso, profile, profileReady, roleTerms, matchesRoles, normalizeJob, assess, mergeJobs, groupSimilar, sortJobs };
 })();
 

@@ -74,6 +74,11 @@ test('stale application evidence does not establish a current public route', () 
   const { R } = environment(), j = job({ applyInfo: { ...info([{ kind: 'email', value: 'hiring@example.com' }]), checkedAt: '2000-01-01' } });
   assert.equal(R.matchesAccess(j, 'public'), false);
 });
+test('public application evidence expires after five minutes rather than a day', () => {
+  const { R } = environment();
+  const j = job({ sourceLabel: '示例学院', applyInfo: { ...info([{ kind: 'email', value: 'hiring@example.com' }]), checkedAt: new Date(Date.now() - 6 * 60000).toISOString() } });
+  assert.equal(R.matchesAccess(j, 'public'), false); assert.equal(R.matchesAccess(j), false);
+});
 test('student login HTML is detected without claiming verified job details', () => {
   const { S } = environment(), html = '<h1>学生登录</h1>请输入学号<input type="password">';
   assert.equal(S.loginGate(html, 'https://college.example.edu.cn/login'), 'school-login');
